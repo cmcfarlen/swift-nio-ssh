@@ -71,21 +71,6 @@ public enum SshAgentRequest: Sendable, Hashable {
     }
 }
 
-private func readString(_ buf: inout ByteBuffer) -> String? {
-    guard let sLen: UInt32 = buf.readInteger() else {
-        return nil
-    }
-    return buf.readString(length: Int(sLen))
-}
-
-private func readBytes(_ buf: inout ByteBuffer) -> ByteBuffer? {
-    guard let sLen: UInt32 = buf.readInteger() else {
-        return nil
-    }
-    print("Byte length: \(sLen)")
-    return buf.readSlice(length: Int(sLen))
-}
-
 public struct SshIdentity: Hashable, Sendable {
     let key: ByteBuffer
     let comment: String
@@ -95,8 +80,8 @@ extension SshIdentity: CustomStringConvertible {
     public var description: String {
         var bb = ByteBuffer(buffer: key)
         guard
-            let id = readString(&bb),
-            let bytes = readBytes(&bb)
+            let id = bb.readSSHStringAsString(),
+            let bytes = bb.readSSHString()
         else {
             return "unknown \(key) \(comment)"
         }
@@ -114,8 +99,8 @@ private func readIdentityList(_ buf: inout ByteBuffer) -> [SshIdentity] {
 
     for _ in 0..<nKeys {
         guard
-            let key = readBytes(&buf),
-            let comment = readString(&buf)
+            let key = buf.readSSHString(),
+            let comment = buf.readSSHStringAsString()
         else {
             return result
         }
@@ -146,7 +131,7 @@ public enum SshAgentResponse: Sendable, Hashable {
         case .identitiesAnswer:
             self = .identities(readIdentityList(&buf))
         case .signResponse:
-            if let sig = readBytes(&buf) {
+            if let sig = buf.readSSHString() {
                 self = .signResponse(sig)
             } else {
                 self = .generalFailure
