@@ -12,21 +12,38 @@
 //
 //===----------------------------------------------------------------------===//
 
+import CryptoKit
 import Foundation
 import NIO
 import NIOCore
 import NIOEmbedded
+import NIOFoundationCompat
 import System
 import XCTest
 
 @testable import NIOSSH
 
+enum AgentTestFixtures {
+    static let privateKey =
+        """
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
+        1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQRKMl6GDYWg1rVg1TFyWzAHweCc+EN+
+        Ko70piPjiVd0XQhR0ysmYnTm+9b16ahe9aI73dBzZl+kG0mzWnZ+W8O7AAAAsBb8hvkW/I
+        b5AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEoyXoYNhaDWtWDV
+        MXJbMAfB4Jz4Q34qjvSmI+OJV3RdCFHTKyZidOb71vXpqF71ojvd0HNmX6QbSbNadn5bw7
+        sAAAAgGn8s3ccM2VsVk0ljNv+rq7ueB//lwxdsOLd2wfb8I04AAAAUY21jZmFybGVuQHBl
+        YnMubG9jYWwBAgME
+        -----END OPENSSH PRIVATE KEY-----
+        """
+    static let publicKey =
+        "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEoyXoYNhaDWtWDVMXJbMAfB4Jz4Q34qjvSmI+OJV3RdCFHTKyZidOb71vXpqF71ojvd0HNmX6QbSbNadn5bw7s= cmcfarlen@pebs.local"
+}
+
 final class SshAgentTests: XCTestCase {
     static var agentProcess: Process? = nil
 
     override class func setUp() {
-        print("SshAgent Setup\n")
-
         let p = Process()
         p.executableURL = URL(filePath: "/usr/bin/ssh-agent")
         p.arguments = ["-a", agentPath(), "-d"]
@@ -43,16 +60,12 @@ final class SshAgentTests: XCTestCase {
         } catch {
             fatalError("Running ssh agent failed")
         }
-
-        print("Running ssh agent pid: \(p.processIdentifier)\n")
     }
 
     override class func tearDown() {
-        print("SshAgent Teardown")
         if let agentProcess {
             agentProcess.terminate()
             agentProcess.waitUntilExit()
-            print("SshAgent Exited")
         }
     }
 
@@ -62,10 +75,30 @@ final class SshAgentTests: XCTestCase {
         return "/tmp/niossh-agent-test.\(pid)"
     }
 
+    class func waitForAgent() -> String? {
+        let path = agentPath()
+        let start = Date()
+
+        repeat {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date().timeIntervalSince(start) < 1
+
+        return nil
+    }
+
     func testConnectingToSshAgent() {
         if let p = SshAgentTests.agentProcess {
             XCTAssertGreaterThan(p.processIdentifier, 0)
         }
+    }
+
+    func testIdentity() throws {
+        let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)
+
+        XCTAssertEqual(identity?.identity[0], ByteBuffer(string: "ecdsa-sha2-nistp256"))
     }
 
     func testSshAgentHandler() throws {
@@ -110,6 +143,10 @@ final class SshAgentTests: XCTestCase {
     }
 
     func testEnd2End() throws {
+        guard let agentPath = SshAgentTests.waitForAgent() else {
+            throw XCTestError(XCTestError.timeoutWhileWaiting)
+        }
+
         let group = MultiThreadedEventLoopGroup.singleton
         let bootstrap = ClientBootstrap(group: group)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -123,7 +160,7 @@ final class SshAgentTests: XCTestCase {
                 ])
             }
 
-        let channel = try bootstrap.connect(unixDomainSocketPath: SshAgentTests.agentPath()).wait()
+        let channel = try bootstrap.connect(unixDomainSocketPath: agentPath).wait()
 
         let promise = channel.eventLoop.makePromise(of: SshAgentResponse.self)
         let future = promise.futureResult.map { response -> SshAgentResponse in
@@ -136,8 +173,20 @@ final class SshAgentTests: XCTestCase {
         channel.writeAndFlush(transaction, promise: nil)
 
         let response = try future.wait()
-
         XCTAssertEqual(response, SshAgentResponse.identities([]))
+
+        let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)!
+        let loadPromise = channel.eventLoop.makePromise(of: SshAgentResponse.self)
+        let loadtxn = SshAgentTransaction(
+            request: .addIdentity(identity),
+            promise: loadPromise
+        )
+
+        channel.writeAndFlush(loadtxn, promise: nil)
+
+        let loadResponse = try loadPromise.futureResult.wait()
+        XCTAssertEqual(loadResponse, .generalSuccess)
+
     }
 
 }

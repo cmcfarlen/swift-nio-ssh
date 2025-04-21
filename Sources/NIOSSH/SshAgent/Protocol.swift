@@ -42,9 +42,10 @@ enum MessageNumber: UInt8, Sendable {
     case extensionResponse = 29
 }
 
-public enum SshAgentRequest: Sendable, Hashable {
+public enum SshAgentRequest: Sendable {
     case requestIdentities
     case signRequest(keyBlob: [UInt8], data: [UInt8], flags: UInt32)
+    case addIdentity(Identity)
 
     var messageNumber: MessageNumber {
         switch self {
@@ -52,6 +53,8 @@ public enum SshAgentRequest: Sendable, Hashable {
             .requestIdentities
         case .signRequest:
             .signRequest
+        case .addIdentity:
+            .addIdentity
         }
     }
 
@@ -65,6 +68,10 @@ public enum SshAgentRequest: Sendable, Hashable {
             buf.writeInteger(UInt32(data.count))
             buf.writeBytes(data)
             buf.writeInteger(flags)
+        case .addIdentity(let id):
+            for var bb in id.identity {
+                buf.writeSSHString(&bb)
+            }
         default:
             break
         }
