@@ -14,9 +14,48 @@
 
 import NIO
 
-public enum SshAgentError: Error {
-    case agentNotAvailable(reason: String)
-    case operationInProgress
+/// SSH Agent specific error type
+///
+/// The follows the pattern of NIOSSHError, but for ssh agent errors
+public struct NIOSSHAgentError: Error {
+    public struct ErrorType {
+        private enum Base {
+            case agentNotAvailable
+            case operationInProgress
+        }
+        private var base: Base
+
+        private init(_ base: Base) {
+            self.base = base
+        }
+
+        public static let agentNotAvailable: ErrorType = .init(.agentNotAvailable)
+        public static let operationInProgress: ErrorType = .init(.operationInProgress)
+    }
+
+    public var type: ErrorType
+    public var diagnostics: String?
+
+    internal static func agentNotAvailable(reason: String) -> NIOSSHAgentError {
+        NIOSSHAgentError(type: .agentNotAvailable, diagnostics: reason)
+    }
+    internal static let operationInProgress = NIOSSHAgentError(type: .operationInProgress, diagnostics: nil)
+}
+
+extension NIOSSHAgentError: CustomStringConvertible {
+    public var description: String {
+        "NIOSSHAgentError.\(self.type.description)\(self.diagnostics.map { ": \($0)" } ?? "")"
+    }
+}
+
+extension NIOSSHAgentError.ErrorType: Hashable {}
+
+extension NIOSSHAgentError.ErrorType: Sendable {}
+
+extension NIOSSHAgentError.ErrorType: CustomStringConvertible {
+    public var description: String {
+        String(describing: self.base)
+    }
 }
 
 public struct SshAgentTransaction: Sendable {
@@ -52,7 +91,7 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
 
     public func channelInactive(context: ChannelHandlerContext) {
         if let pending {
-            pending.promise.fail(SshAgentError.agentNotAvailable(reason: "Channel inactive"))
+            pending.promise.fail(NIOSSHAgentError.agentNotAvailable(reason: "Channel Inactive"))
         }
     }
 
@@ -63,7 +102,7 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
             pending = transaction
             _ = context.writeAndFlush(wrapOutboundOut(transaction.request))
         } else {
-            transaction.promise.fail(SshAgentError.operationInProgress)
+            transaction.promise.fail(NIOSSHAgentError.operationInProgress)
         }
     }
 }
