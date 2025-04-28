@@ -50,14 +50,15 @@ extension NIOBinaryIntegerEncodingStrategy where Self == SshAgentBinaryIntegerEn
 /// The format is:
 ///    [messageLength:uint32][messageType:byte][messageContent:byte[messageLength-1]]
 ///
-struct SshAgentFrameCoder {
+public struct SshAgentFrameCoder {
+    public init() {}
 
 }
 
 extension SshAgentFrameCoder: Sendable {}
 
 extension SshAgentFrameCoder: MessageToByteEncoder {
-    func encode(data: ByteBuffer, out: inout ByteBuffer) throws {
+    public func encode(data: ByteBuffer, out: inout ByteBuffer) throws {
         out.writeLengthPrefixed(strategy: .sshAgent) { buffer in
             buffer.writeBytes(data.readableBytesView)
         }
@@ -65,8 +66,8 @@ extension SshAgentFrameCoder: MessageToByteEncoder {
 }
 
 extension SshAgentFrameCoder: ByteToMessageDecoder {
-    typealias InboundOut = ByteBuffer
-    func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
+    public typealias InboundOut = ByteBuffer
+    public func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         guard let len = buffer.getInteger(at: buffer.readerIndex, endianness: .big, as: UInt32.self)
         else {
             return .needMoreData

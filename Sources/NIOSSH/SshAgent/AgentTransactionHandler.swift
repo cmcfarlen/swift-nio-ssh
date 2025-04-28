@@ -61,6 +61,11 @@ extension NIOSSHAgentError.ErrorType: CustomStringConvertible {
 public struct SshAgentTransaction: Sendable {
     let request: SshAgentRequest
     let promise: EventLoopPromise<SshAgentResponse>
+
+    public init(request: SshAgentRequest, promise: EventLoopPromise<SshAgentResponse>) {
+        self.request = request
+        self.promise = promise
+    }
 }
 
 /// SSH Agent transactor

@@ -72,6 +72,17 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .executableTarget(
+            name: "NIOSSHAgentClient",
+            dependencies: [
+                "NIOSSH",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .executableTarget(
             name: "NIOSSHServer",
             dependencies: [
                 "NIOSSH",

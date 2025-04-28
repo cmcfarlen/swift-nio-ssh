@@ -39,7 +39,7 @@ public struct Identity: Sendable, Equatable {
     // be treated opaquely
     let identity: [ByteBuffer]
 
-    init?(pemRepresentation: String) {
+    public init?(pemRepresentation: String) {
         let lines = pemRepresentation.split(separator: "\n")
         guard let first = lines.first,
             first == "-----BEGIN OPENSSH PRIVATE KEY-----",
@@ -85,7 +85,7 @@ public struct Identity: Sendable, Equatable {
         var idx = startIdx
         var idParts: [ByteBuffer] = []
         while let bb = privateKeyInfo.getSSHString(at: idx) {
-            idx += bb.readableBytes+4
+            idx += bb.readableBytes + 4
             idParts.append(bb)
         }
 

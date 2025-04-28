@@ -24,6 +24,8 @@ public final class NIOSSHAgentClientHandler: ChannelDuplexHandler {
     public typealias OutboundIn = SshAgentRequest
     public typealias OutboundOut = ByteBuffer  // ssh-agent wire requests
 
+    public init() {}
+
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         var byteBuffer = self.unwrapInboundIn(data)
 

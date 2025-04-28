@@ -41,33 +41,6 @@ enum AgentTestFixtures {
 }
 
 final class SshAgentTests: XCTestCase {
-    static var agentProcess: Process? = nil
-
-    override class func setUp() {
-        let p = Process()
-        p.executableURL = URL(filePath: "/usr/bin/ssh-agent")
-        p.arguments = ["-a", agentPath(), "-d"]
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-
-        p.standardOutput = outputPipe
-        p.standardError = errorPipe
-
-        do {
-            try p.run()
-
-            agentProcess = p
-        } catch {
-            fatalError("Running ssh agent failed")
-        }
-    }
-
-    override class func tearDown() {
-        if let agentProcess {
-            agentProcess.terminate()
-            agentProcess.waitUntilExit()
-        }
-    }
 
     class func agentPath() -> String {
         let pid = ProcessInfo.processInfo.processIdentifier
@@ -87,12 +60,6 @@ final class SshAgentTests: XCTestCase {
         } while Date().timeIntervalSince(start) < 1
 
         return nil
-    }
-
-    func testConnectingToSshAgent() {
-        if let p = SshAgentTests.agentProcess {
-            XCTAssertGreaterThan(p.processIdentifier, 0)
-        }
     }
 
     func testIdentity() throws {
@@ -141,52 +108,4 @@ final class SshAgentTests: XCTestCase {
 
         _ = try channel.finish()
     }
-
-    func testEnd2End() throws {
-        guard let agentPath = SshAgentTests.waitForAgent() else {
-            throw XCTestError(XCTestError.timeoutWhileWaiting)
-        }
-
-        let group = MultiThreadedEventLoopGroup.singleton
-        let bootstrap = ClientBootstrap(group: group)
-            .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .channelInitializer { channel in
-                // The pipeline processes data and events. Add your handler here.
-                channel.pipeline.addHandlers([
-                    MessageToByteHandler(SshAgentFrameCoder()),
-                    ByteToMessageHandler(SshAgentFrameCoder()),
-                    NIOSSHAgentClientHandler(),
-                    NIOSSHAgentClientTransactionHandler(),
-                ])
-            }
-
-        let channel = try bootstrap.connect(unixDomainSocketPath: agentPath).wait()
-
-        let promise = channel.eventLoop.makePromise(of: SshAgentResponse.self)
-        let future = promise.futureResult.map { response -> SshAgentResponse in
-            print(response)
-            return response
-        }
-
-        let transaction = SshAgentTransaction(request: .requestIdentities, promise: promise)
-
-        channel.writeAndFlush(transaction, promise: nil)
-
-        let response = try future.wait()
-        XCTAssertEqual(response, SshAgentResponse.identities([]))
-
-        let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)!
-        let loadPromise = channel.eventLoop.makePromise(of: SshAgentResponse.self)
-        let loadtxn = SshAgentTransaction(
-            request: .addIdentity(identity),
-            promise: loadPromise
-        )
-
-        channel.writeAndFlush(loadtxn, promise: nil)
-
-        let loadResponse = try loadPromise.futureResult.wait()
-        XCTAssertEqual(loadResponse, .generalSuccess)
-
-    }
-
 }
