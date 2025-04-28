@@ -42,26 +42,6 @@ enum AgentTestFixtures {
 
 final class SshAgentTests: XCTestCase {
 
-    class func agentPath() -> String {
-        let pid = ProcessInfo.processInfo.processIdentifier
-
-        return "/tmp/niossh-agent-test.\(pid)"
-    }
-
-    class func waitForAgent() -> String? {
-        let path = agentPath()
-        let start = Date()
-
-        repeat {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-            Thread.sleep(forTimeInterval: 0.1)
-        } while Date().timeIntervalSince(start) < 1
-
-        return nil
-    }
-
     func testIdentity() throws {
         let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)
 
