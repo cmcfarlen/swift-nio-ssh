@@ -90,12 +90,13 @@ let bootstrap = ClientBootstrap(group: group)
     .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
     .channelInitializer { channel in
         // The pipeline processes data and events. Add your handler here.
-        channel.pipeline.addHandlers([
+        try! channel.pipeline.syncOperations.addHandlers([
             MessageToByteHandler(SshAgentFrameCoder()),
             ByteToMessageHandler(SshAgentFrameCoder()),
             NIOSSHAgentClientHandler(),
             NIOSSHAgentClientTransactionHandler(),
         ])
+        return channel.eventLoop.makeSucceededVoidFuture()
     }
 
 print("Connecting to \(agent.agentPath())")

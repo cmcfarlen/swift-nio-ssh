@@ -78,33 +78,63 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
     public typealias OutboundIn = SshAgentTransaction
     public typealias OutboundOut = SshAgentRequest
 
-    var pending: SshAgentTransaction? = nil
+    private enum State: ~Copyable {
+        case idle
+        case pending(SshAgentTransaction)
+
+        mutating func nextTransaction(_ txn: SshAgentTransaction) -> Bool {
+            switch consume self {
+            case .idle:
+                self = .pending(txn)
+                return true
+            case .pending(let currenttxn):
+                self = .pending(currenttxn)
+                return false
+            }
+        }
+
+        mutating func succeed(_ response: SshAgentResponse) {
+            switch consume self {
+            case .idle:
+                // This drops the response, but likely a logic error
+                // can't seem to use precondition to check for an enum case
+                fatalError("Inappropriate state for succeed call")
+            case .pending(let currenttxn):
+                currenttxn.promise.succeed(response)
+                self = .idle
+            }
+        }
+
+        mutating func fail(_ error: any Error) {
+            switch consume self {
+            case .idle:
+                // This drops the response, but likely a logic error
+                self = .idle
+            case .pending(let currenttxn):
+                currenttxn.promise.fail(error)
+                self = .idle
+            }
+        }
+    }
+
+    private var state = State.idle
 
     public init() {}
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let response = self.unwrapInboundIn(data)
 
-        guard let pending else {
-            // unexpected response
-            return
-        }
-
-        pending.promise.succeed(response)
-        self.pending = nil
+        state.succeed(response)
     }
 
     public func channelInactive(context: ChannelHandlerContext) {
-        if let pending {
-            pending.promise.fail(NIOSSHAgentError.agentNotAvailable(reason: "Channel Inactive"))
-        }
+        state.fail(NIOSSHAgentError.agentNotAvailable(reason: "Channel Inactive"))
     }
 
     public func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         let transaction = unwrapOutboundIn(data)
 
-        if pending == nil {
-            pending = transaction
+        if state.nextTransaction(transaction) {
             _ = context.writeAndFlush(wrapOutboundOut(transaction.request))
         } else {
             transaction.promise.fail(NIOSSHAgentError.operationInProgress)
