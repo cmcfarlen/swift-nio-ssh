@@ -91,4 +91,18 @@ public struct Identity: Sendable, Equatable {
 
         self.identity = idParts
     }
+
+    /// Return the key type as a string
+    ///
+    /// The key type name is always the first field in the PEM private key section
+    var keyType: String? {
+        identity.first.map { String(buffer: $0) }
+    }
+
+    /// Return the comment for the private key
+    ///
+    /// The comment field is the last field in the PEM private key section
+    var comment: String? {
+        identity.last.map { String(buffer: $0) }
+    }
 }

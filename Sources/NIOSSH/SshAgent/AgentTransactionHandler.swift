@@ -141,3 +141,6 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
         }
     }
 }
+
+@available(*, unavailable)
+extension NIOSSHAgentClientTransactionHandler: Sendable {}

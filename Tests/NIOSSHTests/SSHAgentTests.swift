@@ -28,16 +28,16 @@ enum AgentTestFixtures {
         """
         -----BEGIN OPENSSH PRIVATE KEY-----
         b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
-        1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQRKMl6GDYWg1rVg1TFyWzAHweCc+EN+
-        Ko70piPjiVd0XQhR0ysmYnTm+9b16ahe9aI73dBzZl+kG0mzWnZ+W8O7AAAAsBb8hvkW/I
-        b5AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEoyXoYNhaDWtWDV
-        MXJbMAfB4Jz4Q34qjvSmI+OJV3RdCFHTKyZidOb71vXpqF71ojvd0HNmX6QbSbNadn5bw7
-        sAAAAgGn8s3ccM2VsVk0ljNv+rq7ueB//lwxdsOLd2wfb8I04AAAAUY21jZmFybGVuQHBl
-        YnMubG9jYWwBAgME
+        1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQSnrELVzY4VC/3pS1n0s77GxeZJN+cR
+        W+5rfKGkhTjPfcDVeRGSmyaHsC5aBQ8T8RkAPoKAL9HxPN9alD+Yix7AAAAAsPpEO4n6RD
+        uJAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKesQtXNjhUL/elL
+        WfSzvsbF5kk35xFb7mt8oaSFOM99wNV5EZKbJoewLloFDxPxGQA+goAv0fE831qUP5iLHs
+        AAAAAhAOIV/ZCxhuh9NVEcfKQ9QJsRkwxIQyhjAzjUTjNqD2FDAAAAEHRlc3RAa2V5ZWNk
+        c2EyNTYBAgMEBQYH
         -----END OPENSSH PRIVATE KEY-----
         """
     static let publicKey =
-        "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEoyXoYNhaDWtWDVMXJbMAfB4Jz4Q34qjvSmI+OJV3RdCFHTKyZidOb71vXpqF71ojvd0HNmX6QbSbNadn5bw7s= cmcfarlen@pebs.local"
+        "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKesQtXNjhUL/elLWfSzvsbF5kk35xFb7mt8oaSFOM99wNV5EZKbJoewLloFDxPxGQA+goAv0fE831qUP5iLHsA= test@keyecdsa256"
 }
 
 final class SshAgentTests: XCTestCase {
@@ -45,46 +45,85 @@ final class SshAgentTests: XCTestCase {
     func testIdentity() throws {
         let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)
 
-        XCTAssertEqual(identity?.identity[0], ByteBuffer(string: "ecdsa-sha2-nistp256"))
+        XCTAssertNotNil(identity)
+        XCTAssertEqual(identity?.keyType, "ecdsa-sha2-nistp256")
+        XCTAssertEqual(identity?.comment, "test@keyecdsa256")
     }
 
     func testSshAgentHandler() throws {
         let channel = EmbeddedChannel()
         let handler = NIOSSHAgentClientHandler()
 
+        func testTransaction(
+            request: SshAgentRequest,
+            testEncode: (inout ByteBuffer) -> Void,
+            buildResponse: ((inout ByteBuffer) -> Void)? = nil,
+            testResponse: ((SshAgentResponse?) -> Void)? = nil
+        ) throws {
+            _ = channel.write(request)
+
+            let bb = try channel.readOutbound(as: ByteBuffer.self)
+            XCTAssertNotNil(bb)
+
+            guard var bb else {
+                return
+            }
+
+            testEncode(&bb)
+            bb.clear()
+            if let buildResponse {
+                buildResponse(&bb)
+                try channel.writeInbound(bb)
+
+                let response = try channel.readInbound(as: SshAgentResponse.self)
+                testResponse?(response)
+            }
+        }
+
         XCTAssertNoThrow(try channel.pipeline.syncOperations.addHandler(handler))
         XCTAssertNil(try channel.readOutbound())
 
         _ = try channel.connect(to: .init(unixDomainSocketPath: "/foo"))
 
-        let request: SshAgentRequest = .requestIdentities
-
-        _ = channel.write(request)
-
-        // Verify the output wire format
-        let bb = try channel.readOutbound(as: ByteBuffer.self)
-
-        XCTAssertNotNil(bb)
-
-        if var bb {
+        try testTransaction(request: .requestIdentities) { bb in
             XCTAssertEqual(bb.readableBytes, 1)
 
             let msgid: UInt8? = bb.readInteger()
             XCTAssertEqual(msgid, 11)
         }
 
-        // simulate response
-        var respbb = channel.allocator.buffer(capacity: 32)
+        try testTransaction(request: .requestIdentities) { bb in
+            XCTAssertEqual(bb.readableBytes, 1)
 
-        respbb.writeInteger(UInt8(5))
+            let msgid: UInt8? = bb.readInteger()
+            XCTAssertEqual(msgid, 11)
+        } buildResponse: { bb in
+            bb.writeInteger(MessageNumber.identitiesAnswer.rawValue)
+            bb.writeInteger(UInt32(1))
+            bb.writeSSHString("publickey".utf8)
+            bb.writeSSHString("comment".utf8)
+        } testResponse: { response in
+            XCTAssertNotNil(response)
+            guard let response else {
+                return
+            }
+            switch response {
+            case .identities(let ids):
+                XCTAssertEqual(ids.count, 1)
+                XCTAssertEqual(ids[0].key.readableBytes, 9)
+                XCTAssertEqual(ids[0].comment, "comment")
+            default:
+                return
+            }
+        }
 
-        XCTAssertEqual(respbb.readableBytes, 1)
-
-        try channel.writeInbound(respbb)
-
-        let response = try channel.readInbound(as: SshAgentResponse.self)
-
-        XCTAssertEqual(response, .generalFailure)
+        let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)!
+        try testTransaction(request: .addIdentity(identity)) { bb in
+            // The id request should just have the message number and a copy of identity
+            XCTAssertEqual(bb.readInteger(as: UInt8.self), MessageNumber.addIdentity.rawValue)
+            let idBytes = identity.identity.map(\.readableBytes).reduce(0, +) + (identity.identity.count * 4)
+            XCTAssertEqual(bb.readableBytes, idBytes)
+        }
 
         _ = try channel.finish()
     }
