@@ -81,6 +81,10 @@ public enum SshAgentRequest: Sendable {
 public struct SshIdentity: Hashable, Sendable {
     let key: ByteBuffer
     let comment: String
+
+    public var keyBlob: [UInt8] {
+        key.getBytes(at: 0, length: key.readableBytes) ?? []
+    }
 }
 
 extension SshIdentity: CustomStringConvertible {

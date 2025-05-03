@@ -1,3 +1,31 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the SwiftNIO open source project
+//
+// Copyright (c) 2019 Apple Inc. and the SwiftNIO project authors
+// Licensed under Apache License v2.0
+//
+// See LICENSE.txt for license information
+// See CONTRIBUTORS.txt for the list of SwiftNIO project authors
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+//===----------------------------------------------------------------------===//
+
+//
+// This example program demonstrates connecting to an SSH Agent and performing
+// some operations.  It starts a new ssh-agent instance so it doesn't interfere
+// with any existing running agents.  A real ssh agent client might look at the
+// environment variable SSH_AUTH_SOCK to check for a running agent and the
+// socket to connect to.
+//
+// This example:
+//   - Starts an ssh-agent listening on a temporary socket file
+//   - Connects to the new agent
+//   - Adds an ssh identity to the agent
+//   - Uses that identity to request a signature
+//   - stops the ssh agent
+
 import Foundation
 import NIO
 import NIOSSH
@@ -6,16 +34,16 @@ let privateKey =
     """
     -----BEGIN OPENSSH PRIVATE KEY-----
     b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
-    1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQRKMl6GDYWg1rVg1TFyWzAHweCc+EN+
-    Ko70piPjiVd0XQhR0ysmYnTm+9b16ahe9aI73dBzZl+kG0mzWnZ+W8O7AAAAsBb8hvkW/I
-    b5AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEoyXoYNhaDWtWDV
-    MXJbMAfB4Jz4Q34qjvSmI+OJV3RdCFHTKyZidOb71vXpqF71ojvd0HNmX6QbSbNadn5bw7
-    sAAAAgGn8s3ccM2VsVk0ljNv+rq7ueB//lwxdsOLd2wfb8I04AAAAUY21jZmFybGVuQHBl
-    YnMubG9jYWwBAgME
+    1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQSnrELVzY4VC/3pS1n0s77GxeZJN+cR
+    W+5rfKGkhTjPfcDVeRGSmyaHsC5aBQ8T8RkAPoKAL9HxPN9alD+Yix7AAAAAsPpEO4n6RD
+    uJAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKesQtXNjhUL/elL
+    WfSzvsbF5kk35xFb7mt8oaSFOM99wNV5EZKbJoewLloFDxPxGQA+goAv0fE831qUP5iLHs
+    AAAAAhAOIV/ZCxhuh9NVEcfKQ9QJsRkwxIQyhjAzjUTjNqD2FDAAAAEHRlc3RAa2V5ZWNk
+    c2EyNTYBAgMEBQYH
     -----END OPENSSH PRIVATE KEY-----
     """
 let publicKey =
-    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEoyXoYNhaDWtWDVMXJbMAfB4Jz4Q34qjvSmI+OJV3RdCFHTKyZidOb71vXpqF71ojvd0HNmX6QbSbNadn5bw7s= cmcfarlen@pebs.local"
+    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKesQtXNjhUL/elLWfSzvsbF5kk35xFb7mt8oaSFOM99wNV5EZKbJoewLloFDxPxGQA+goAv0fE831qUP5iLHsA= test@keyecdsa256"
 
 public class SshAgentProcess {
     var agentProcess: Process? = nil
@@ -88,7 +116,6 @@ let group = MultiThreadedEventLoopGroup.singleton
 let bootstrap = ClientBootstrap(group: group)
     .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
     .channelInitializer { channel in
-        // The pipeline processes data and events. Add your handler here.
         try! channel.pipeline.syncOperations.addHandlers([
             MessageToByteHandler(SshAgentFrameCoder()),
             ByteToMessageHandler(SshAgentFrameCoder()),
@@ -101,7 +128,7 @@ let bootstrap = ClientBootstrap(group: group)
 print("Connecting to \(agent.agentPath())")
 let channel = try bootstrap.connect(unixDomainSocketPath: agent.agentPath()).wait()
 
-let makeSyncRequest = { (request: SshAgentRequest) in
+func makeSyncRequest(_ request: SshAgentRequest) throws -> SshAgentResponse {
     let promise = channel.eventLoop.makePromise(of: SshAgentResponse.self)
     let future = promise.futureResult
 
@@ -112,11 +139,32 @@ let makeSyncRequest = { (request: SshAgentRequest) in
     return try future.wait()
 }
 
+func extractIdentities(_ response: SshAgentResponse) -> [SshIdentity]? {
+    switch response {
+    case .identities(let ids):
+        return ids
+    default:
+        return nil
+    }
+}
+
 print("Identities before add: \(try makeSyncRequest(.requestIdentities))")
 
 let identity = Identity(pemRepresentation: privateKey)!
 print("Response from adding identity \(try makeSyncRequest(.addIdentity(identity)))")
 
-print("Identities after add: \(try makeSyncRequest(.requestIdentities))")
+let requestIdentitiesResponse = try makeSyncRequest(.requestIdentities)
+print("Identities after add: \(requestIdentitiesResponse)")
+
+if let ids = extractIdentities(requestIdentitiesResponse),
+    let id = ids.first
+{
+    // an SSH client would sign a UserAuthSignablePayload, but the agent will sign anything for us
+    let dataToSign = "Please sign this"
+    let signResponse = try makeSyncRequest(.signRequest(keyBlob: id.keyBlob, data: [UInt8](dataToSign.utf8), flags: 0))
+    print("Signature response: \(signResponse)")
+} else {
+    print("No signatures available with which to sign")
+}
 
 agent.stop()
