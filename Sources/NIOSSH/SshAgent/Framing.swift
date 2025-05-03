@@ -50,6 +50,9 @@ extension NIOBinaryIntegerEncodingStrategy where Self == SshAgentBinaryIntegerEn
 /// The format is:
 ///    [messageLength:uint32][messageType:byte][messageContent:byte[messageLength-1]]
 ///
+/// The ~SshAgentFrameCoder` only deals with adding the message length to the frames,
+/// the rest of the frame is handled by the protocol message encodings.
+///
 public struct SshAgentFrameCoder {
     public init() {}
 
