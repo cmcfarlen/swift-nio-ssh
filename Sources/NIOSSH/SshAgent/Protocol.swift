@@ -42,6 +42,9 @@ enum MessageNumber: UInt8, Sendable {
     case extensionResponse = 29
 }
 
+/// A request to an SSH Agent
+///
+/// This enum handles the encoding of requests to `ByteBuffer`s
 public enum SshAgentRequest: Sendable {
     case requestIdentities
     case signRequest(keyBlob: [UInt8], data: [UInt8], flags: UInt32)
@@ -58,6 +61,7 @@ public enum SshAgentRequest: Sendable {
         }
     }
 
+    /// Encodes a SSH Agent request into a `ByteBuffer`
     package func encode(into buf: inout ByteBuffer) {
         buf.writeInteger(messageNumber.rawValue)
 
@@ -78,6 +82,11 @@ public enum SshAgentRequest: Sendable {
     }
 }
 
+/// An identifier representing an Agent stored identity
+///
+/// The SSH Agent doesn't allow direct access to private keys
+/// so this type represents the public identity and is used
+/// as a key to the SSH Agent when performing operations
 public struct SshIdentity: Hashable, Sendable {
     let key: ByteBuffer
     let comment: String
@@ -125,6 +134,7 @@ private func readIdentityList(_ buf: inout ByteBuffer) -> [SshIdentity] {
     return result
 }
 
+/// A response from the SSH Agent
 public enum SshAgentResponse: Sendable, Hashable {
     case generalSuccess
     case generalFailure
@@ -155,5 +165,4 @@ public enum SshAgentResponse: Sendable, Hashable {
             self = .notYetSupported(message: number.rawValue)
         }
     }
-
 }
