@@ -1,6 +1,5 @@
 import Foundation
 import NIO
-import NIOCore
 import NIOSSH
 
 let privateKey =

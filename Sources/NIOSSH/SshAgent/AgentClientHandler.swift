@@ -12,9 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import NIO
-import System
 
 public final class NIOSSHAgentClientHandler: ChannelDuplexHandler {
     // These ByteBuffers will just be the message type and payload

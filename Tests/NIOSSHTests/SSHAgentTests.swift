@@ -12,13 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-import CryptoKit
-import Foundation
 import NIO
-import NIOCore
 import NIOEmbedded
-import NIOFoundationCompat
-import System
 import XCTest
 
 @testable import NIOSSH
