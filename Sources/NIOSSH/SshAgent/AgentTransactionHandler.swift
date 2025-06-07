@@ -24,6 +24,7 @@ public struct NIOSSHAgentError: Error {
             case operationInProgress
             case trailingBytes
             case badResponse
+            case unexpectedResponse
         }
         private var base: Base
 
@@ -35,6 +36,7 @@ public struct NIOSSHAgentError: Error {
         public static let operationInProgress: ErrorType = .init(.operationInProgress)
         public static let trailingBytes: ErrorType = .init(.trailingBytes)
         public static let badResponse: ErrorType = .init(.badResponse)
+        public static let unexpectedResponse: ErrorType = .init(.unexpectedResponse)
     }
 
     public var type: ErrorType
@@ -52,6 +54,9 @@ public struct NIOSSHAgentError: Error {
         type: .badResponse,
         diagnostics: "Recieved bad response from agent"
     )
+    internal static func unexpectedResponse(reason: String) -> NIOSSHAgentError {
+        NIOSSHAgentError(type: .unexpectedResponse, diagnostics: reason)
+    }
 }
 
 extension NIOSSHAgentError: CustomStringConvertible {

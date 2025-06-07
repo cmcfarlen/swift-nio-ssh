@@ -98,7 +98,7 @@ extension UserAuthenticationStateMachine {
         _ message: SSHMessage.ServiceAcceptMessage
     ) throws -> EventLoopFuture<SSHMessage.UserAuthRequestMessage?>? {
         switch (self.delegate, self.state) {
-        case (.client(let delegate), .awaitingServiceAcceptance):
+        case (.client(var delegate), .awaitingServiceAcceptance):
             guard message.service == Self.serviceName else {
                 throw NIOSSHError.protocolViolation(
                     protocolName: Self.protocolName,
@@ -108,7 +108,7 @@ extension UserAuthenticationStateMachine {
 
             // Cool, we can begin the auth dance.
             self.state = .awaitingNextRequest
-            return self.requestNextAuthRequest(methods: .all, delegate: delegate)
+            return self.requestNextAuthRequest(methods: .all, delegate: &delegate)
         case (.client, .authenticationSucceeded):
             // We should ignore all further auth messages in this state.
             return nil
@@ -214,11 +214,11 @@ extension UserAuthenticationStateMachine {
         _ message: SSHMessage.UserAuthFailureMessage
     ) throws -> EventLoopFuture<SSHMessage.UserAuthRequestMessage?>? {
         switch (self.delegate, self.state) {
-        case (.client(let delegate), .awaitingResponses(let responseCount)):
+        case (.client(var delegate), .awaitingResponses(let responseCount)):
             // Ok, the server didn't like that much. Let's try another one.
             self.state = .awaitingNextRequest
             precondition(responseCount == 1, "We don't support parallel authentication attempts yet!")
-            return self.requestNextAuthRequest(methods: .init(message), delegate: delegate)
+            return self.requestNextAuthRequest(methods: .init(message), delegate: &delegate)
         case (.client, .authenticationSucceeded):
             // We should ignore all further auth messages in this state.
             return nil
@@ -442,10 +442,28 @@ extension UserAuthenticationStateMachine {
 extension UserAuthenticationStateMachine {
     fileprivate func requestNextAuthRequest(
         methods: NIOSSHAvailableUserAuthenticationMethods,
-        delegate: NIOSSHClientUserAuthenticationDelegate
+        delegate: inout NIOSSHClientUserAuthenticationDelegate
     ) -> EventLoopFuture<SSHMessage.UserAuthRequestMessage?> {
+        struct Attempt: NIOSSHClientUserAuthenticationInfo, Sendable {
+            var sessionID: ByteBuffer
+            var availableMethods: NIOSSHAvailableUserAuthenticationMethods
+            var eventLoop: EventLoop
+
+            func generateSignableAuthPayload(username: String, forKey: NIOSSHPublicKey) -> ByteBuffer {
+                let dataToSign = UserAuthSignablePayload(
+                    sessionIdentifier: sessionID,
+                    userName: username,
+                    serviceName: "ssh-connection",
+                    publicKey: forKey
+                )
+                return dataToSign.bytes
+            }
+        }
         let promise = self.loop.makePromise(of: NIOSSHUserAuthenticationOffer?.self)
-        delegate.nextAuthenticationType(availableMethods: methods, nextChallengePromise: promise)
+        delegate.nextAuthenticationType(
+            authInfo: Attempt(sessionID: self.sessionID, availableMethods: methods, eventLoop: self.loop),
+            nextChallengePromise: promise
+        )
 
         // The explicit capture list is here to force a copy of the buffer, rather than capturing self.
         return promise.futureResult.flatMapThrowing { [sessionID = self.sessionID] request in

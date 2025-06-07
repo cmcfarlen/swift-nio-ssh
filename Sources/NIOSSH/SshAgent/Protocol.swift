@@ -87,14 +87,21 @@ public enum NIOSSHAgentRequest: Sendable {
     }
 }
 
-/// An identifier representing an Agent stored identity
+/// SshIdentity represents a key pair stored in the ssh-agent
 ///
-/// The SSH Agent doesn't allow direct access to private keys
-/// so this type represents the public identity and is used
-/// as a key to the SSH Agent when performing operations
+/// The ssh-agent does not expose private keys, so for auth you must
+/// ask the agent to sign data on your behalf.  The request identities
+/// command to a ssh-agent will return the list of public keys that
+/// can be used for sign requests.
+/// Its fine to leave the keys as opaque bytes here as they
+/// are only used to hand back to the ssh-agent for signature requests
 public struct NIOSSHIdentity: Hashable, Sendable {
     public let key: ByteBuffer
     public let comment: String
+
+    public var keyBlob: [UInt8] {
+        key.getBytes(at: 0, length: key.readableBytes) ?? []
+    }
 }
 
 extension NIOSSHIdentity: CustomStringConvertible {
@@ -107,7 +114,18 @@ extension NIOSSHIdentity: CustomStringConvertible {
             return "unknown \(key) \(comment)"
         }
 
-        return "\(id) \(Data(bytes.readableBytesView).base64EncodedString()) \(comment)"
+        return "\(id) \(Data(key.readableBytesView).base64EncodedString()) \(comment)"
+    }
+
+    public var publicKey: NIOSSHPublicKey {
+        // TODO(cmcfarlen): Init from raw respresentation without roundtrip to string
+        do {
+            let d = description
+            print("trying \(d)")
+            return try NIOSSHPublicKey(openSSHPublicKey: d)
+        } catch {
+            fatalError("Failed to convert public key: \(error)")
+        }
     }
 }
 

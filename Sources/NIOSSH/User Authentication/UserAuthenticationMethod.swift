@@ -180,6 +180,9 @@ extension NIOSSHUserAuthenticationOffer {
         /// The client would like to perform password authentication.
         case password(Password)
 
+        /// An ssh agent signed on our behalf
+        case agentSigned(NIOSSHPublicKey, NIOSSHSignature?)
+
         /// The client would like to perform host-based authentication.
         ///
         /// This method is currently unsupported by ``NIOSSH``.
@@ -250,6 +253,8 @@ extension SSHMessage.UserAuthRequestMessage {
             )
             let signature = try privateKeyRequest.privateKey.sign(dataToSign)
             self.method = .publicKey(.known(key: privateKeyRequest.publicKey, signature: signature))
+        case .agentSigned(let pubKey, let signature):
+            self.method = .publicKey(.known(key: pubKey, signature: signature))
         case .password(let passwordRequest):
             self.method = .password(passwordRequest.password)
         case .hostBased:

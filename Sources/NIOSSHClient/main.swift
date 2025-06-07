@@ -54,10 +54,14 @@ let bootstrap = ClientBootstrap(group: group)
             let ssh = NIOSSHHandler(
                 role: .client(
                     .init(
-                        userAuthDelegate: InteractivePasswordPromptDelegate(
-                            username: parseResult.user,
-                            password: parseResult.password
-                        ),
+                        // userAuthDelegate: InteractivePasswordPromptDelegate(
+                        //     username: parseResult.user,
+                        //     password: parseResult.password
+                        // ),
+                        userAuthDelegate: SshAgentUserAuthenticationDelegate(username: parseResult.user ?? "user") {
+                            eventloop in
+                            ClientBootstrap(group: eventloop)
+                        },
                         serverAuthDelegate: AcceptAllHostKeysDelegate()
                     )
                 ),
