@@ -120,9 +120,7 @@ extension NIOSSHIdentity: CustomStringConvertible {
     public var publicKey: NIOSSHPublicKey {
         // TODO(cmcfarlen): Init from raw respresentation without roundtrip to string
         do {
-            let d = description
-            print("trying \(d)")
-            return try NIOSSHPublicKey(openSSHPublicKey: d)
+            return try NIOSSHPublicKey(openSSHPublicKey: description)
         } catch {
             fatalError("Failed to convert public key: \(error)")
         }
