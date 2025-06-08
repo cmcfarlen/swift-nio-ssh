@@ -45,10 +45,6 @@ public final class SshAgentUserAuthenticationDelegate<Bootstrap: NIOClientTCPBoo
     static var environmentAgent: String? {
         ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"]
     }
-
-    enum AgentAuthError: Error {
-
-    }
 }
 
 extension SshAgentUserAuthenticationDelegate: Sendable {}
@@ -59,7 +55,6 @@ extension NIOSSHPublicKey {
             var r = raw
             let s = try r.readSSHSignature()
             return s
-
         } catch {
             print("Caught error converting signature \(error)")
             throw error
@@ -73,75 +68,28 @@ extension SshAgentUserAuthenticationDelegate: NIOSSHClientUserAuthenticationDele
         nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>
     ) {
         let username = self.username
-        getAgentChannel(eventLoop: authInfo.eventLoop)
-            .whenComplete { result in
-                switch result {
-                case .failure(let err):
-                    nextChallengePromise.fail(err)
-                case .success(let channel):
-                    SshAgentUserAuthenticationDelegate.makeRequest(channel: channel, request: .requestIdentities)
-                        .whenComplete { result in
-                            switch result {
-                            case .failure(let err):
-                                nextChallengePromise.fail(err)
-                            case .success(let resp):
-                                switch resp {
-                                case .identities(let ids):
-                                    print("Got \(ids.count) ids")
-                                    let pubkey = ids[0].publicKey
-                                    let signBytes = authInfo.generateSignableAuthPayload(
-                                        username: username,
-                                        forKey: pubkey
-                                    )
-                                    _ = channel.eventLoop.submit {
-                                        SshAgentUserAuthenticationDelegate.makeRequest(
-                                            channel: channel,
-                                            request: .signRequest(
-                                                keyBlob: Array(ids[0].key.readableBytesView),
-                                                data: Array(signBytes.readableBytesView),
-                                                flags: 0
-                                            )
-                                        )
-                                        .whenComplete { result in
-                                            switch result {
-                                            case .failure(let err):
-                                                nextChallengePromise.fail(err)
-                                            case .success(let resp):
-                                                switch resp {
-                                                case .signResponse(let signature):
-                                                    nextChallengePromise.succeed(
-                                                        .init(
-                                                            username: username,
-                                                            serviceName: "",
-                                                            offer: .agentSigned(
-                                                                pubkey,
-                                                                try? pubkey.rawBytesToSignature(raw: signature)
-                                                            )
-                                                        )
-                                                    )
-                                                default:
-                                                    nextChallengePromise.fail(
-                                                        NIOSSHAgentError.unexpectedResponse(
-                                                            reason:
-                                                                "Unexpected response for request signature: \(result)"
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                default:
-                                    nextChallengePromise.fail(
-                                        NIOSSHAgentError.unexpectedResponse(
-                                            reason: "Unexpected response for request ids: \(resp)"
-                                        )
-                                    )
-                                }
-                            }
-
-                        }
-                }
-
+        listIdentities(eventLoop: authInfo.eventLoop)
+            .flatMap { ids in
+                print("got ids \(ids)")
+                return self.signAuthRequest(authInfo: authInfo, username: username, identity: ids[0])
+            }
+            .flatMap { pubkey, signature in
+                print("Got Signature: \(username) \(pubkey) \(signature)")
+                nextChallengePromise.succeed(
+                    .init(
+                        username: username,
+                        serviceName: "",
+                        offer: .agentSigned(
+                            pubkey,
+                            signature
+                        )
+                    )
+                )
+                return authInfo.eventLoop.makeSucceededVoidFuture()
+            }
+            .whenFailure { err in
+                print("Failure \(err)")
+                nextChallengePromise.fail(err)
             }
     }
 
@@ -177,6 +125,59 @@ extension SshAgentUserAuthenticationDelegate {
         }
 
         return promise.futureResult
+    }
+
+    private func listIdentities(eventLoop: EventLoop) -> EventLoopFuture<[SshIdentity]> {
+        getAgentChannel(eventLoop: eventLoop)
+            .flatMap { channel in
+                Self.makeRequest(channel: channel, request: .requestIdentities)
+            }
+            .flatMap { resp in
+                switch resp {
+                case .identities(let ids):
+                    return eventLoop.makeSucceededFuture(ids)
+                default:
+                    return eventLoop.makeFailedFuture(
+                        NIOSSHAgentError.unexpectedResponse(reason: "Unexpected response: \(resp)")
+                    )
+                }
+            }
+    }
+
+    private func signAuthRequest(
+        authInfo: NIOSSHClientUserAuthenticationInfo,
+        username: String,
+        identity: SshIdentity
+    ) -> EventLoopFuture<(NIOSSHPublicKey, NIOSSHSignature?)> {
+        let pubkey = identity.publicKey
+        return getAgentChannel(eventLoop: authInfo.eventLoop)
+            .flatMap { channel in
+                let signBytes = authInfo.generateSignableAuthPayload(
+                    username: username,
+                    forKey: pubkey
+                )
+                return Self.makeRequest(
+                    channel: channel,
+                    request: .signRequest(
+                        keyBlob: Array(identity.key.readableBytesView),
+                        data: Array(signBytes.readableBytesView),
+                        flags: 0
+                    )
+                )
+            }
+            .flatMap { (resp: SshAgentResponse) in
+                switch resp {
+                case .signResponse(let signature):
+                    authInfo.eventLoop.makeSucceededFuture((pubkey, try? pubkey.rawBytesToSignature(raw: signature)))
+                default:
+                    authInfo.eventLoop.makeFailedFuture(
+                        NIOSSHAgentError.unexpectedResponse(
+                            reason:
+                                "Unexpected response for request signature: \(resp)"
+                        )
+                    )
+                }
+            }
     }
 
     private func startAgentConnect(eventLoop: EventLoop) {
@@ -230,7 +231,9 @@ extension SshAgentUserAuthenticationDelegate {
 
         let transaction = SshAgentTransaction(request: request, promise: promise)
 
-        channel.writeAndFlush(transaction, promise: nil)
+        _ = channel.eventLoop.submit {
+            channel.writeAndFlush(transaction, promise: nil)
+        }
 
         return future
     }
