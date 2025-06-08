@@ -70,11 +70,9 @@ extension SshAgentUserAuthenticationDelegate: NIOSSHClientUserAuthenticationDele
         let username = self.username
         listIdentities(eventLoop: authInfo.eventLoop)
             .flatMap { ids in
-                print("got ids \(ids)")
-                return self.signAuthRequest(authInfo: authInfo, username: username, identity: ids[0])
+                self.signAuthRequest(authInfo: authInfo, username: username, identity: ids[0])
             }
             .flatMap { pubkey, signature in
-                print("Got Signature: \(username) \(pubkey) \(signature)")
                 nextChallengePromise.succeed(
                     .init(
                         username: username,
@@ -195,7 +193,6 @@ extension SshAgentUserAuthenticationDelegate {
                     return channel.eventLoop.makeSucceededVoidFuture()
                 }
 
-            print("Connecting to \(socketPath)")
             bootstrap.connect(unixDomainSocketPath: socketPath)
                 .whenComplete { [weak self] result in
                     self?.agentState.withLockedValue { state in
