@@ -22,6 +22,8 @@ public final class SshAgentUserAuthenticationDelegate<Bootstrap: NIOClientTCPBoo
         case notConnected
         case connecting([EventLoopPromise<Channel>])
         case connected(Channel)
+        case waitingIdentities(Channel, [EventLoopPromise<[SshIdentity]>])
+        case readyToRock(Channel, [SshIdentity])
         case failed(any Error)
     }
 
@@ -111,7 +113,7 @@ extension SshAgentUserAuthenticationDelegate {
             case .connecting(var waiters):
                 waiters.append(promise)
                 state = .connecting(waiters)
-            case .connected(let channel):
+            case .connected(let channel), .readyToRock(let channel, _), .waitingIdentities(let channel, _):
                 promise.succeed(channel)
             case .failed(let err):
                 promise.fail(err)
@@ -126,20 +128,33 @@ extension SshAgentUserAuthenticationDelegate {
     }
 
     private func listIdentities(eventLoop: EventLoop) -> EventLoopFuture<[SshIdentity]> {
-        getAgentChannel(eventLoop: eventLoop)
-            .flatMap { channel in
-                Self.makeRequest(channel: channel, request: .requestIdentities)
+        let promise = eventLoop.makePromise(of: [SshIdentity].self)
+        var doList = false
+        agentState.withLockedValue { state in
+            switch state {
+            case .connected(let ch):
+                state = .waitingIdentities(ch, [promise])
+                doList = true
+            case .waitingIdentities(let ch, var waiters):
+                waiters.append(promise)
+                state = .waitingIdentities(ch, waiters)
+            case .readyToRock(_, let ids):
+                promise.succeed(ids)
+            case .failed(let err):
+                promise.fail(err)
+            default:
+                doList = true
             }
-            .flatMap { resp in
-                switch resp {
-                case .identities(let ids):
-                    return eventLoop.makeSucceededFuture(ids)
-                default:
-                    return eventLoop.makeFailedFuture(
-                        NIOSSHAgentError.unexpectedResponse(reason: "Unexpected response: \(resp)")
-                    )
+        }
+
+        if doList {
+            getAgentChannel(eventLoop: eventLoop)
+                .whenSuccess { channel in
+                    self.startListingIdentities(channel: channel)
                 }
-            }
+        }
+
+        return promise.futureResult
     }
 
     private func signAuthRequest(
@@ -219,6 +234,48 @@ extension SshAgentUserAuthenticationDelegate {
             fatalError("Failed bootstrapping ssh agent connection \(error)")
         }
     }
+
+    private func startListingIdentities(channel: Channel) {
+        Self.makeRequest(channel: channel, request: .requestIdentities)
+            .whenComplete { [weak self] result in
+                self?.agentState.withLockedValue { state in
+                    switch state {
+                    case .waitingIdentities(let channel, let waiters):
+                        switch result {
+                        case .success(let resp):
+                            switch resp {
+                            case .identities(let ids):
+                                for w in waiters {
+                                    w.succeed(ids)
+                                }
+                                state = .readyToRock(channel, ids)
+                            default:
+                                let err =
+                                    NIOSSHAgentError.unexpectedResponse(
+                                        reason:
+                                            "Unexpected response for list identities: \(resp)"
+                                    )
+                                for w in waiters {
+                                    w.fail(err)
+                                }
+                                _ = channel.close()
+                                state = .failed(err)
+                            }
+                        case .failure(let err):
+                            for w in waiters {
+                                w.fail(err)
+                            }
+                            _ = channel.close()
+                            state = .failed(err)
+                        }
+                    default:
+                        fatalError("Unexpected SshAgent connect state.  Expected .waitingIdentities, got \(state)")
+                    }
+
+                }
+            }
+    }
+
 }
 
 extension SshAgentUserAuthenticationDelegate {
