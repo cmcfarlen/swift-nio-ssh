@@ -12,9 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import NIO
 import NIOFoundationCompat
+
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 
 /// SSH Identity used for adding identities to an ssh agent
 ///
@@ -32,12 +37,12 @@ import NIOFoundationCompat
 /// as well as the source code.
 ///
 /// Sendable because ByteBuffer is (unchecked) Sendable
-public struct Identity: Sendable, Equatable {
+public struct NIOSSHAgentIdentity: Sendable, Equatable {
     // Store the identity as an array of ByteBuffers
     // While the layout of identities varies by key type,
     // all of the fields are length prefixed, so they can
     // be treated opaquely
-    let identity: [ByteBuffer]
+    var identity: [ByteBuffer]
 
     public init?(pemRepresentation: String) {
         let lines = pemRepresentation.split(separator: "\n")
@@ -95,14 +100,14 @@ public struct Identity: Sendable, Equatable {
     /// Return the key type as a string
     ///
     /// The key type name is always the first field in the PEM private key section
-    var keyType: String? {
+    public var keyType: String? {
         identity.first.map { String(buffer: $0) }
     }
 
     /// Return the comment for the private key
     ///
     /// The comment field is the last field in the PEM private key section
-    var comment: String? {
+    public var comment: String? {
         identity.last.map { String(buffer: $0) }
     }
 }

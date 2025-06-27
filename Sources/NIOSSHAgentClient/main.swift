@@ -128,18 +128,18 @@ let bootstrap = ClientBootstrap(group: group)
 print("Connecting to \(agent.agentPath())")
 let channel = try bootstrap.connect(unixDomainSocketPath: agent.agentPath()).wait()
 
-func makeSyncRequest(_ request: SshAgentRequest) throws -> SshAgentResponse {
-    let promise = channel.eventLoop.makePromise(of: SshAgentResponse.self)
+func makeSyncRequest(_ request: NIOSSHAgentRequest) throws -> NIOSSHAgentResponse {
+    let promise = channel.eventLoop.makePromise(of: NIOSSHAgentResponse.self)
     let future = promise.futureResult
 
-    let transaction = SshAgentTransaction(request: request, promise: promise)
+    let transaction = NIOSSHAgentTransaction(request: request, promise: promise)
 
     channel.writeAndFlush(transaction, promise: nil)
 
     return try future.wait()
 }
 
-func extractIdentities(_ response: SshAgentResponse) -> [SshIdentity]? {
+func extractIdentities(_ response: NIOSSHAgentResponse) -> [NIOSSHIdentity]? {
     switch response {
     case .identities(let ids):
         return ids
@@ -150,7 +150,7 @@ func extractIdentities(_ response: SshAgentResponse) -> [SshIdentity]? {
 
 print("Identities before add: \(try makeSyncRequest(.requestIdentities))")
 
-let identity = Identity(pemRepresentation: privateKey)!
+let identity = NIOSSHAgentIdentity(pemRepresentation: privateKey)!
 print("Response from adding identity \(try makeSyncRequest(.addIdentity(identity)))")
 
 let requestIdentitiesResponse = try makeSyncRequest(.requestIdentities)
