@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIO
+import NIOCore
 
 /// A `ChannelDuplexHandler` for converting SSH Agent requests and responses
 /// to `ByteBuffer`.  This handler is stateless.
@@ -24,8 +24,8 @@ public final class NIOSSHAgentClientHandler: ChannelDuplexHandler {
     // These ByteBuffers will just be the message type and payload
     // The length is trimmed off/added by framing handlers
     public typealias InboundIn = ByteBuffer  // ssh-agent wire responses
-    public typealias InboundOut = SshAgentResponse
-    public typealias OutboundIn = SshAgentRequest
+    public typealias InboundOut = NIOSSHAgentResponse
+    public typealias OutboundIn = NIOSSHAgentRequest
     public typealias OutboundOut = ByteBuffer  // ssh-agent wire requests
 
     public init() {}
@@ -33,7 +33,7 @@ public final class NIOSSHAgentClientHandler: ChannelDuplexHandler {
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         var byteBuffer = self.unwrapInboundIn(data)
 
-        guard let response = SshAgentResponse(from: &byteBuffer) else {
+        guard let response = NIOSSHAgentResponse(from: &byteBuffer) else {
             // Bad response from agent
             return
         }
@@ -53,9 +53,7 @@ public final class NIOSSHAgentClientHandler: ChannelDuplexHandler {
 
         request.encode(into: &buffer)
 
-        promise?.succeed()
-
-        context.writeAndFlush(wrapOutboundOut(buffer), promise: nil)
+        context.write(wrapOutboundOut(buffer), promise: promise)
     }
 }
 

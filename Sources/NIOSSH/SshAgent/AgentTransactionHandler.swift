@@ -22,6 +22,7 @@ public struct NIOSSHAgentError: Error {
         private enum Base {
             case agentNotAvailable
             case operationInProgress
+            case trailingBytes
         }
         private var base: Base
 
@@ -31,6 +32,7 @@ public struct NIOSSHAgentError: Error {
 
         public static let agentNotAvailable: ErrorType = .init(.agentNotAvailable)
         public static let operationInProgress: ErrorType = .init(.operationInProgress)
+        public static let trailingBytes: ErrorType = .init(.trailingBytes)
     }
 
     public var type: ErrorType
@@ -40,6 +42,10 @@ public struct NIOSSHAgentError: Error {
         NIOSSHAgentError(type: .agentNotAvailable, diagnostics: reason)
     }
     internal static let operationInProgress = NIOSSHAgentError(type: .operationInProgress, diagnostics: nil)
+    internal static let trailingBytes = NIOSSHAgentError(
+        type: .trailingBytes,
+        diagnostics: "Unexpected trailing bytes remaining after read"
+    )
 }
 
 extension NIOSSHAgentError: CustomStringConvertible {
@@ -58,11 +64,11 @@ extension NIOSSHAgentError.ErrorType: CustomStringConvertible {
     }
 }
 
-public struct SshAgentTransaction: Sendable {
-    let request: SshAgentRequest
-    let promise: EventLoopPromise<SshAgentResponse>
+public struct NIOSSHAgentTransaction: Sendable {
+    public var request: NIOSSHAgentRequest
+    public var promise: EventLoopPromise<NIOSSHAgentResponse>
 
-    public init(request: SshAgentRequest, promise: EventLoopPromise<SshAgentResponse>) {
+    public init(request: NIOSSHAgentRequest, promise: EventLoopPromise<NIOSSHAgentResponse>) {
         self.request = request
         self.promise = promise
     }
@@ -73,16 +79,16 @@ public struct SshAgentTransaction: Sendable {
 /// This handler keeps one pending transaction and will reject any others
 /// that come in before the pending one completes
 public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
-    public typealias InboundIn = SshAgentResponse
-    public typealias InboundOut = SshAgentResponse
-    public typealias OutboundIn = SshAgentTransaction
-    public typealias OutboundOut = SshAgentRequest
+    public typealias InboundIn = NIOSSHAgentResponse
+    public typealias InboundOut = NIOSSHAgentResponse
+    public typealias OutboundIn = NIOSSHAgentTransaction
+    public typealias OutboundOut = NIOSSHAgentRequest
 
     private enum State: ~Copyable {
         case idle
-        case pending(SshAgentTransaction)
+        case pending(NIOSSHAgentTransaction)
 
-        mutating func nextTransaction(_ txn: SshAgentTransaction) -> Bool {
+        mutating func nextTransaction(_ txn: NIOSSHAgentTransaction) -> Bool {
             switch consume self {
             case .idle:
                 self = .pending(txn)
@@ -93,7 +99,7 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
             }
         }
 
-        mutating func succeed(_ response: SshAgentResponse) {
+        mutating func succeed(_ response: NIOSSHAgentResponse) {
             switch consume self {
             case .idle:
                 // This drops the response, but likely a logic error

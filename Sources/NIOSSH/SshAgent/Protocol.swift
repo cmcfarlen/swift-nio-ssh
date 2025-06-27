@@ -18,8 +18,13 @@
 // https://datatracker.ietf.org/doc/html/rfc4251#section-5
 //
 
-import Foundation
 import NIOCore
+
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 
 enum MessageNumber: UInt8, Sendable {
     case requestIdentities = 11
@@ -45,10 +50,10 @@ enum MessageNumber: UInt8, Sendable {
 /// A request to an SSH Agent
 ///
 /// This enum handles the encoding of requests to `ByteBuffer`s
-public enum SshAgentRequest: Sendable {
+public enum NIOSSHAgentRequest: Sendable {
     case requestIdentities
     case signRequest(keyBlob: [UInt8], data: [UInt8], flags: UInt32)
-    case addIdentity(Identity)
+    case addIdentity(NIOSSHAgentIdentity)
 
     var messageNumber: MessageNumber {
         switch self {
@@ -87,7 +92,7 @@ public enum SshAgentRequest: Sendable {
 /// The SSH Agent doesn't allow direct access to private keys
 /// so this type represents the public identity and is used
 /// as a key to the SSH Agent when performing operations
-public struct SshIdentity: Hashable, Sendable {
+public struct NIOSSHIdentity: Hashable, Sendable {
     let key: ByteBuffer
     let comment: String
 
@@ -96,7 +101,7 @@ public struct SshIdentity: Hashable, Sendable {
     }
 }
 
-extension SshIdentity: CustomStringConvertible {
+extension NIOSSHIdentity: CustomStringConvertible {
     public var description: String {
         var bb = ByteBuffer(buffer: key)
         guard
@@ -110,11 +115,11 @@ extension SshIdentity: CustomStringConvertible {
     }
 }
 
-private func readIdentityList(_ buf: inout ByteBuffer) -> [SshIdentity] {
+private func readIdentityList(_ buf: inout ByteBuffer) throws -> [NIOSSHIdentity] {
     guard let nKeys: UInt32 = buf.readInteger() else {
         return []
     }
-    var result: [SshIdentity] = []
+    var result: [NIOSSHIdentity] = []
     result.reserveCapacity(Int(nKeys))
 
     for _ in 0..<nKeys {
@@ -124,25 +129,25 @@ private func readIdentityList(_ buf: inout ByteBuffer) -> [SshIdentity] {
         else {
             return result
         }
-        result.append(SshIdentity(key: key, comment: comment))
+        result.append(NIOSSHIdentity(key: key, comment: comment))
     }
 
     if buf.readableBytes > 0 {
-        print("Bytes left after reading list \(buf)")
+        throw NIOSSHAgentError.trailingBytes
     }
 
     return result
 }
 
 /// A response from the SSH Agent
-public enum SshAgentResponse: Sendable, Hashable {
+public enum NIOSSHAgentResponse: Sendable, Hashable {
     case generalSuccess
     case generalFailure
-    case identities([SshIdentity])
+    case identities([NIOSSHIdentity])
     case signResponse(ByteBuffer)
     case notYetSupported(message: UInt8)
 
-    init?(from buf: inout ByteBuffer) {
+    init?(from buf: inout ByteBuffer) throws {
         guard let messageNumber: UInt8 = buf.readInteger(),
             let number = MessageNumber(rawValue: messageNumber)
         else {
@@ -150,7 +155,7 @@ public enum SshAgentResponse: Sendable, Hashable {
         }
         switch number {
         case .identitiesAnswer:
-            self = .identities(readIdentityList(&buf))
+            self = .identities(try readIdentityList(&buf))
         case .signResponse:
             if let sig = buf.readSSHString() {
                 self = .signResponse(sig)
