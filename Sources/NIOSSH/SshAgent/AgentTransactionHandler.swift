@@ -90,6 +90,27 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
     public typealias OutboundIn = NIOSSHAgentTransaction
     public typealias OutboundOut = NIOSSHAgentRequest
 
+    /// An internal Action struct to process side-effects of state transitions
+    ///
+    /// This avoids potential re-entrant state transitions related to inline processing
+    /// of promise delivery
+    private enum Action {
+        case succeed(EventLoopPromise<NIOSSHAgentResponse>, NIOSSHAgentResponse)
+        case fail(EventLoopPromise<NIOSSHAgentResponse>, Error)
+        case nothing
+
+        func doAction() {
+            switch self {
+            case .succeed(let promise, let response):
+                promise.succeed(response)
+            case .fail(let promise, let error):
+                promise.fail(error)
+            case .nothing:
+                return
+            }
+        }
+    }
+
     private enum State: ~Copyable {
         case idle
         case pending(NIOSSHAgentTransaction)
@@ -105,26 +126,27 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
             }
         }
 
-        mutating func succeed(_ response: NIOSSHAgentResponse) {
+        mutating func succeed(_ response: NIOSSHAgentResponse) -> Action {
             switch consume self {
             case .idle:
                 // This drops the response, but likely a logic error
                 // can't seem to use precondition to check for an enum case
                 fatalError("Inappropriate state for succeed call")
             case .pending(let currenttxn):
-                currenttxn.promise.succeed(response)
                 self = .idle
+                return .succeed(currenttxn.promise, response)
             }
         }
 
-        mutating func fail(_ error: any Error) {
+        mutating func fail(_ error: any Error) -> Action {
             switch consume self {
             case .idle:
                 // This drops the response, but likely a logic error
                 self = .idle
+                return .nothing
             case .pending(let currenttxn):
-                currenttxn.promise.fail(error)
                 self = .idle
+                return .fail(currenttxn.promise, error)
             }
         }
     }
@@ -136,18 +158,18 @@ public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let response = self.unwrapInboundIn(data)
 
-        state.succeed(response)
+        state.succeed(response).doAction()
     }
 
     public func channelInactive(context: ChannelHandlerContext) {
-        state.fail(NIOSSHAgentError.agentNotAvailable(reason: "Channel Inactive"))
+        state.fail(NIOSSHAgentError.agentNotAvailable(reason: "Channel Inactive")).doAction()
     }
 
     public func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         let transaction = unwrapOutboundIn(data)
 
         if state.nextTransaction(transaction) {
-            _ = context.writeAndFlush(wrapOutboundOut(transaction.request))
+            _ = context.write(wrapOutboundOut(transaction.request))
         } else {
             transaction.promise.fail(NIOSSHAgentError.operationInProgress)
         }
