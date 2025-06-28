@@ -23,6 +23,7 @@ public struct NIOSSHAgentError: Error {
             case agentNotAvailable
             case operationInProgress
             case trailingBytes
+            case badResponse
         }
         private var base: Base
 
@@ -33,6 +34,7 @@ public struct NIOSSHAgentError: Error {
         public static let agentNotAvailable: ErrorType = .init(.agentNotAvailable)
         public static let operationInProgress: ErrorType = .init(.operationInProgress)
         public static let trailingBytes: ErrorType = .init(.trailingBytes)
+        public static let badResponse: ErrorType = .init(.badResponse)
     }
 
     public var type: ErrorType
@@ -45,6 +47,10 @@ public struct NIOSSHAgentError: Error {
     internal static let trailingBytes = NIOSSHAgentError(
         type: .trailingBytes,
         diagnostics: "Unexpected trailing bytes remaining after read"
+    )
+    internal static let badResponse = NIOSSHAgentError(
+        type: .badResponse,
+        diagnostics: "Recieved bad response from agent"
     )
 }
 
