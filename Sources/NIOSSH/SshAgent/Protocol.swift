@@ -52,7 +52,7 @@ enum MessageNumber: UInt8, Sendable {
 /// This enum handles the encoding of requests to `ByteBuffer`s
 public enum NIOSSHAgentRequest: Sendable {
     case requestIdentities
-    case signRequest(keyBlob: [UInt8], data: [UInt8], flags: UInt32)
+    case signRequest(keyBlob: ByteBuffer, data: ByteBuffer, flags: UInt32)
     case addIdentity(NIOSSHAgentIdentity)
 
     var messageNumber: MessageNumber {
@@ -72,10 +72,8 @@ public enum NIOSSHAgentRequest: Sendable {
 
         switch self {
         case .signRequest(keyBlob: let blob, let data, let flags):
-            buf.writeInteger(UInt32(blob.count))
-            buf.writeBytes(blob)
-            buf.writeInteger(UInt32(data.count))
-            buf.writeBytes(data)
+            buf.writeLengthPrefixedBuffer(blob, strategy: .sshAgent)
+            buf.writeLengthPrefixedBuffer(data, strategy: .sshAgent)
             buf.writeInteger(flags)
         case .addIdentity(let id):
             for var bb in id.identity {
@@ -93,12 +91,8 @@ public enum NIOSSHAgentRequest: Sendable {
 /// so this type represents the public identity and is used
 /// as a key to the SSH Agent when performing operations
 public struct NIOSSHIdentity: Hashable, Sendable {
-    let key: ByteBuffer
-    let comment: String
-
-    public var keyBlob: [UInt8] {
-        key.getBytes(at: 0, length: key.readableBytes) ?? []
-    }
+    public let key: ByteBuffer
+    public let comment: String
 }
 
 extension NIOSSHIdentity: CustomStringConvertible {
@@ -115,30 +109,6 @@ extension NIOSSHIdentity: CustomStringConvertible {
     }
 }
 
-private func readIdentityList(_ buf: inout ByteBuffer) throws -> [NIOSSHIdentity] {
-    guard let nKeys: UInt32 = buf.readInteger() else {
-        return []
-    }
-    var result: [NIOSSHIdentity] = []
-    result.reserveCapacity(Int(nKeys))
-
-    for _ in 0..<nKeys {
-        guard
-            let key = buf.readSSHString(),
-            let comment = buf.readSSHStringAsString()
-        else {
-            return result
-        }
-        result.append(NIOSSHIdentity(key: key, comment: comment))
-    }
-
-    if buf.readableBytes > 0 {
-        throw NIOSSHAgentError.trailingBytes
-    }
-
-    return result
-}
-
 /// A response from the SSH Agent
 public enum NIOSSHAgentResponse: Sendable, Hashable {
     case generalSuccess
@@ -146,28 +116,55 @@ public enum NIOSSHAgentResponse: Sendable, Hashable {
     case identities([NIOSSHIdentity])
     case signResponse(ByteBuffer)
     case notYetSupported(message: UInt8)
+}
 
-    init?(from buf: inout ByteBuffer) throws {
-        guard let messageNumber: UInt8 = buf.readInteger(),
+extension ByteBuffer {
+    mutating func readAgentIdentityList() throws -> [NIOSSHIdentity] {
+        guard let nKeys: UInt32 = self.readInteger() else {
+            return []
+        }
+        var result: [NIOSSHIdentity] = []
+        result.reserveCapacity(Int(nKeys))
+
+        for _ in 0..<nKeys {
+            guard
+                let key = self.readSSHString(),
+                let comment = self.readSSHStringAsString()
+            else {
+                return result
+            }
+            result.append(NIOSSHIdentity(key: key, comment: comment))
+        }
+
+        if self.readableBytes > 0 {
+            throw NIOSSHAgentError.trailingBytes
+        }
+
+        return result
+    }
+
+    mutating func readSSHAgentResponse() throws -> NIOSSHAgentResponse? {
+        guard let messageNumber: UInt8 = self.readInteger(),
             let number = MessageNumber(rawValue: messageNumber)
         else {
             return nil
         }
         switch number {
         case .identitiesAnswer:
-            self = .identities(try readIdentityList(&buf))
+            return .identities(try readAgentIdentityList())
         case .signResponse:
-            if let sig = buf.readSSHString() {
-                self = .signResponse(sig)
+            if let sig = self.readSSHString() {
+                return .signResponse(sig)
             } else {
-                self = .generalFailure
+                return .generalFailure
             }
         case .failure:
-            self = .generalFailure
+            return .generalFailure
         case .success:
-            self = .generalSuccess
+            return .generalSuccess
         default:
-            self = .notYetSupported(message: number.rawValue)
+            return .notYetSupported(message: number.rawValue)
         }
+
     }
 }

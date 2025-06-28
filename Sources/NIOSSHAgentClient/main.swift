@@ -161,7 +161,9 @@ if let ids = extractIdentities(requestIdentitiesResponse),
 {
     // an SSH client would sign a UserAuthSignablePayload, but the agent will sign anything for us
     let dataToSign = "Please sign this"
-    let signResponse = try makeSyncRequest(.signRequest(keyBlob: id.keyBlob, data: [UInt8](dataToSign.utf8), flags: 0))
+    let signResponse = try makeSyncRequest(
+        .signRequest(keyBlob: id.key, data: ByteBuffer(string: dataToSign), flags: 0)
+    )
     print("Signature response: \(signResponse)")
 } else {
     print("No signatures available with which to sign")
