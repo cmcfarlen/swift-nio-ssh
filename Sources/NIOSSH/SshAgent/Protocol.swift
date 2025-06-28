@@ -143,11 +143,11 @@ extension ByteBuffer {
         return result
     }
 
-    mutating func readSSHAgentResponse() throws -> NIOSSHAgentResponse? {
+    mutating func readSSHAgentResponse() throws -> NIOSSHAgentResponse {
         guard let messageNumber: UInt8 = self.readInteger(),
             let number = MessageNumber(rawValue: messageNumber)
         else {
-            return nil
+            throw NIOSSHAgentError.badResponse
         }
         switch number {
         case .identitiesAnswer:

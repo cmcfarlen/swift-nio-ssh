@@ -33,12 +33,13 @@ public final class NIOSSHAgentClientHandler: ChannelDuplexHandler {
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         var byteBuffer = self.unwrapInboundIn(data)
 
-        guard let response = try? byteBuffer.readSSHAgentResponse() else {
-            // Bad response from agent
-            return
-        }
+        do {
+            let response = try byteBuffer.readSSHAgentResponse()
 
-        context.fireChannelRead(wrapInboundOut(response))
+            context.fireChannelRead(wrapInboundOut(response))
+        } catch {
+            context.fireErrorCaught(error)
+        }
     }
 
     public func errorCaught(context: ChannelHandlerContext, error: Error) {
