@@ -26,25 +26,27 @@ import FoundationEssentials
 import Foundation
 #endif
 
-enum MessageNumber: UInt8, Sendable {
-    case requestIdentities = 11
-    case signRequest = 13
-    case addIdentity = 17
-    case removeIdentity = 18
-    case removeAllIdentities = 19
-    case addSmartcardKey = 20
-    case removeSmartcardKey = 21
-    case lock = 22
-    case unlock = 23
-    case addIdConstrained = 25
-    case addSmartcardKeyContrained = 26
-    case messageExtension = 27
-    case failure = 5
-    case success = 6
-    case identitiesAnswer = 12
-    case signResponse = 14
-    case extensionFailure = 28
-    case extensionResponse = 29
+struct MessageNumber: Sendable, Equatable {
+    let rawValue: UInt8
+
+    static let requestIdentities = MessageNumber(rawValue: 11)
+    static let signRequest = MessageNumber(rawValue: 13)
+    static let addIdentity = MessageNumber(rawValue: 17)
+    static let removeIdentity = MessageNumber(rawValue: 18)
+    static let removeAllIdentities = MessageNumber(rawValue: 19)
+    static let addSmartcardKey = MessageNumber(rawValue: 20)
+    static let removeSmartcardKey = MessageNumber(rawValue: 21)
+    static let lock = MessageNumber(rawValue: 22)
+    static let unlock = MessageNumber(rawValue: 23)
+    static let addIdConstrained = MessageNumber(rawValue: 25)
+    static let addSmartcardKeyContrained = MessageNumber(rawValue: 26)
+    static let messageExtension = MessageNumber(rawValue: 27)
+    static let failure = MessageNumber(rawValue: 5)
+    static let success = MessageNumber(rawValue: 6)
+    static let identitiesAnswer = MessageNumber(rawValue: 12)
+    static let signResponse = MessageNumber(rawValue: 14)
+    static let extensionFailure = MessageNumber(rawValue: 28)
+    static let extensionResponse = MessageNumber(rawValue: 29)
 }
 
 /// A request to an SSH Agent
@@ -144,11 +146,10 @@ extension ByteBuffer {
     }
 
     mutating func readSSHAgentResponse() throws -> NIOSSHAgentResponse {
-        guard let messageNumber: UInt8 = self.readInteger(),
-            let number = MessageNumber(rawValue: messageNumber)
-        else {
+        guard let messageNumber: UInt8 = self.readInteger() else {
             throw NIOSSHAgentError.badResponse
         }
+        let number = MessageNumber(rawValue: messageNumber)
         switch number {
         case .identitiesAnswer:
             return .identities(try readAgentIdentityList())
