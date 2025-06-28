@@ -73,9 +73,9 @@ public enum NIOSSHAgentRequest: Sendable {
         buf.writeInteger(messageNumber.rawValue)
 
         switch self {
-        case .signRequest(keyBlob: let blob, let data, let flags):
-            buf.writeLengthPrefixedBuffer(blob, strategy: .sshAgent)
-            buf.writeLengthPrefixedBuffer(data, strategy: .sshAgent)
+        case .signRequest(keyBlob: var blob, var data, let flags):
+            buf.writeSSHString(&blob)
+            buf.writeSSHString(&data)
             buf.writeInteger(flags)
         case .addIdentity(let id):
             for var bb in id.identity {

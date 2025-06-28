@@ -14,43 +14,11 @@
 
 import NIOCore
 
-/// SSH Agent protocol encodes integers in big endian
-/// This struct is only used to write the the length prefix for messages
-struct SshAgentBinaryIntegerEncodingStrategy: NIOBinaryIntegerEncodingStrategy {
-    func readInteger<IntegerType>(
-        as type: IntegerType.Type,
-        from buffer: inout ByteBuffer
-    )
-        -> IntegerType? where IntegerType: FixedWidthInteger
-    {
-        guard let length = buffer.getInteger(at: buffer.readerIndex, endianness: .big, as: UInt32.self)
-        else {
-            return nil
-        }
-        buffer.moveReaderIndex(forwardBy: 4)
-        return IntegerType(length)
-    }
-
-    func writeInteger<IntegerType>(_ integer: IntegerType, to buffer: inout ByteBuffer) -> Int
-    where IntegerType: FixedWidthInteger {
-        let length = UInt32(truncatingIfNeeded: integer)
-        return buffer.writeInteger(length, endianness: .big)
-    }
-
-    var requiredBytesHint: Int { 4 }
-}
-
-extension NIOBinaryIntegerEncodingStrategy where Self == SshAgentBinaryIntegerEncodingStrategy {
-    static var sshAgent: SshAgentBinaryIntegerEncodingStrategy {
-        SshAgentBinaryIntegerEncodingStrategy()
-    }
-}
-
 /// The SshAgent protocol uses a length-prefixed framing to encode messages
 /// The format is:
 ///    [messageLength:uint32][messageType:byte][messageContent:byte[messageLength-1]]
 ///
-/// The ~SshAgentFrameCoder` only deals with adding the message length to the frames,
+/// The `SshAgentFrameCoder` only deals with adding the message length to the frames,
 /// the rest of the frame is handled by the protocol message encodings.
 ///
 public struct SshAgentFrameCoder {
@@ -62,7 +30,7 @@ extension SshAgentFrameCoder: Sendable {}
 
 extension SshAgentFrameCoder: MessageToByteEncoder {
     public func encode(data: ByteBuffer, out: inout ByteBuffer) throws {
-        out.writeLengthPrefixed(strategy: .sshAgent) { buffer in
+        try out.writeLengthPrefixed(as: UInt32.self) { buffer in
             buffer.writeBytes(data.readableBytesView)
         }
     }
