@@ -38,7 +38,7 @@ enum AgentTestFixtures {
 final class SshAgentTests: XCTestCase {
 
     func testIdentity() throws {
-        let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)
+        let identity = NIOSSHAgentIdentity(pemRepresentation: AgentTestFixtures.privateKey)
 
         XCTAssertNotNil(identity)
         XCTAssertEqual(identity?.keyType, "ecdsa-sha2-nistp256")
@@ -50,10 +50,10 @@ final class SshAgentTests: XCTestCase {
         let handler = NIOSSHAgentClientHandler()
 
         func testTransaction(
-            request: SshAgentRequest,
+            request: NIOSSHAgentRequest,
             testEncode: (inout ByteBuffer) -> Void,
             buildResponse: ((inout ByteBuffer) -> Void)? = nil,
-            testResponse: ((SshAgentResponse?) -> Void)? = nil
+            testResponse: ((NIOSSHAgentResponse?) -> Void)? = nil
         ) throws {
             _ = channel.write(request)
 
@@ -70,7 +70,7 @@ final class SshAgentTests: XCTestCase {
                 buildResponse(&bb)
                 try channel.writeInbound(bb)
 
-                let response = try channel.readInbound(as: SshAgentResponse.self)
+                let response = try channel.readInbound(as: NIOSSHAgentResponse.self)
                 testResponse?(response)
             }
         }
@@ -112,7 +112,7 @@ final class SshAgentTests: XCTestCase {
             }
         }
 
-        let identity = Identity(pemRepresentation: AgentTestFixtures.privateKey)!
+        let identity = NIOSSHAgentIdentity(pemRepresentation: AgentTestFixtures.privateKey)!
         try testTransaction(request: .addIdentity(identity)) { bb in
             // The id request should just have the message number and a copy of identity
             XCTAssertEqual(bb.readInteger(as: UInt8.self), MessageNumber.addIdentity.rawValue)
