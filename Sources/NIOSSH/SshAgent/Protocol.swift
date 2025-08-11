@@ -112,12 +112,31 @@ extension NIOSSHIdentity: CustomStringConvertible {
 }
 
 /// A response from the SSH Agent
-public enum NIOSSHAgentResponse: Sendable, Hashable {
-    case generalSuccess
-    case generalFailure
-    case identities([NIOSSHIdentity])
-    case signResponse(ByteBuffer)
-    case notYetSupported(message: UInt8)
+public struct NIOSSHAgentResponse: Sendable, Hashable {
+    public enum Response: Sendable, Hashable {
+        case generalSuccess
+        case generalFailure
+        case identities([NIOSSHIdentity])
+        case signResponse(ByteBuffer)
+        case notYetSupported(message: UInt8)
+    }
+
+    public let response: Response
+
+    public static let generalSuccess: NIOSSHAgentResponse = .init(response: .generalSuccess)
+    public static let generalFailure: NIOSSHAgentResponse = .init(response: .generalFailure)
+
+    public static func identities(_ ids: [NIOSSHIdentity]) -> NIOSSHAgentResponse {
+        .init(response: .identities(ids))
+    }
+
+    public static func signResponse(_ bytes: ByteBuffer) -> NIOSSHAgentResponse {
+        .init(response: .signResponse(bytes))
+    }
+
+    public static func notYetSupported(message: UInt8) -> NIOSSHAgentResponse {
+        .init(response: .notYetSupported(message: message))
+    }
 }
 
 extension ByteBuffer {

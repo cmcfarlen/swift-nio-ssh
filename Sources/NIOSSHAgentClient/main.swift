@@ -140,7 +140,7 @@ func makeSyncRequest(_ request: NIOSSHAgentRequest) throws -> NIOSSHAgentRespons
 }
 
 func extractIdentities(_ response: NIOSSHAgentResponse) -> [NIOSSHIdentity]? {
-    switch response {
+    switch response.response {
     case .identities(let ids):
         return ids
     default:
