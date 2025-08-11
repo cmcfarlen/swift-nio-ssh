@@ -57,6 +57,8 @@ final class SshAgentTests: XCTestCase {
         ) throws {
             _ = channel.write(request)
 
+            channel.flush()
+
             let bb = try channel.readOutbound(as: ByteBuffer.self)
             XCTAssertNotNil(bb)
 
