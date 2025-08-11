@@ -142,7 +142,9 @@ public struct NIOSSHAgentResponse: Sendable, Hashable {
 extension ByteBuffer {
     mutating func readAgentIdentityList() throws -> [NIOSSHIdentity] {
         guard let nKeys: UInt32 = self.readInteger() else {
-            return []
+            // An ssh agent should always provide the number of keys here, so if this read fails
+            // its a fail
+            throw NIOSSHAgentError.badResponse
         }
         var result: [NIOSSHIdentity] = []
         result.reserveCapacity(Int(nKeys))
