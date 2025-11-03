@@ -14,10 +14,18 @@
 
 import NIO
 
-/// SSH Agent specific error type
+/// An error thrown by SSH Agent operations.
 ///
-/// The follows the pattern of NIOSSHError, but for ssh agent errors
+/// For extensibility purposes, ``NIOSSHAgentError``s are composed of two parts. The first part is an
+/// error type. This is like an enum, but extensible, and identifies the kind of error programmatically.
+/// The second part is some opaque diagnostic data. This is not visible to your code, but is used to
+/// help provide extra information for diagnostic purposes when logging this error.
+///
+/// Note that due to this construction ``NIOSSHAgentError`` is not equatable: only the ``NIOSSHAgentError/type`` is. This is deliberate,
+/// as it is possible two errors have the same type but a different underlying cause or diagnostic data. For
+/// this reason, if you need to compare two ``NIOSSHAgentError`` values you should explicitly compare their ``NIOSSHAgentError/type``.
 public struct NIOSSHAgentError: Error {
+    /// The type of this error, used to identify the kind of error that has been thrown.
     public struct ErrorType {
         private enum Base {
             case agentNotAvailable
@@ -39,8 +47,10 @@ public struct NIOSSHAgentError: Error {
         public static let partialResponse: ErrorType = .init(.partialResponse)
     }
 
+    /// The type of this error, used to identify the kind of error that has been thrown.
     public var type: ErrorType
-    public var diagnostics: String?
+
+    private var diagnostics: String?
 
     internal static func agentNotAvailable(reason: String) -> NIOSSHAgentError {
         NIOSSHAgentError(type: .agentNotAvailable, diagnostics: reason)
@@ -81,20 +91,38 @@ extension NIOSSHAgentError.ErrorType: CustomStringConvertible {
     }
 }
 
+/// A transaction representing a single SSH Agent request/response pair.
+///
+/// This structure encapsulates an SSH Agent request along with the promise that will be fulfilled
+/// when the corresponding response is received. Transactions are used by ``NIOSSHAgentClientTransactionHandler``
+/// to manage the request/response flow.
 public struct NIOSSHAgentTransaction: Sendable {
+    /// The SSH Agent request to send.
     public var request: NIOSSHAgentRequest
+
+    /// The promise to complete when a response is received.
     public var promise: EventLoopPromise<NIOSSHAgentResponse>
 
+    /// Create a new SSH Agent transaction.
+    ///
+    /// - Parameters:
+    ///   - request: The SSH Agent request to send.
+    ///   - promise: The promise to complete when a response is received.
     public init(request: NIOSSHAgentRequest, promise: EventLoopPromise<NIOSSHAgentResponse>) {
         self.request = request
         self.promise = promise
     }
 }
 
-/// SSH Agent transactor
+/// A `ChannelDuplexHandler` that manages SSH Agent request/response transactions.
 ///
-/// This handler keeps one pending transaction and will reject any others
-/// that come in before the pending one completes
+/// This handler ensures that only one SSH Agent transaction is in flight at any given time.
+/// It pairs outbound requests with inbound responses, completing the associated promise when
+/// a response is received. If a request is written while another is pending, the new request
+/// will be rejected with ``NIOSSHAgentError/ErrorType/operationInProgress``.
+///
+/// This handler should be placed in the channel pipeline after ``NIOSSHAgentClientHandler``,
+/// which handles the protocol encoding/decoding.
 public final class NIOSSHAgentClientTransactionHandler: ChannelDuplexHandler {
     public typealias InboundIn = NIOSSHAgentResponse
     public typealias InboundOut = NIOSSHAgentResponse

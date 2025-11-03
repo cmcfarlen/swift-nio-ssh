@@ -21,22 +21,34 @@ import FoundationEssentials
 import Foundation
 #endif
 
-/// SSH Identity used for adding identities to an ssh agent
+/// A private key identity that can be added to an SSH Agent.
 ///
-/// This is essentially a private key, but I'm not certain
-/// of the correlation between the SSH wire format and
-/// the raw representation of keys in CryptoKit.
+/// This type represents a private key in the format used by the SSH Agent protocol
+/// for adding identities. It is distinct from ``NIOSSHIdentity``, which represents
+/// a public key identifier returned by the agent.
 ///
-/// So for now, these are separately modeled but
-/// if the arcane artifacts can be unearthed, perhaps
-/// these itentities can be converted to useful SSH auth keys
+/// ## Creating Identities
 ///
-/// Identities can be read from the ssh flavored PEM encoded file format.
-/// The format is not well documented, but there is some information
-/// [here](https://coolaj86.com/articles/the-openssh-private-key-format/)
-/// as well as the source code.
+/// Identities can be created from OpenSSH PEM-encoded private key files:
 ///
-/// Sendable because ByteBuffer is (unchecked) Sendable
+/// ```swift
+/// let pemData = try String(contentsOf: URL(fileURLWithPath: "~/.ssh/id_ed25519"))
+/// guard let identity = NIOSSHAgentIdentity(pemRepresentation: pemData) else {
+///     // Handle invalid or encrypted key
+/// }
+/// ```
+///
+/// ## Limitations
+///
+/// - Currently only supports unencrypted keys (cipher: "none", kdf: "none")
+/// - Only supports single-key files (keyCount: 1)
+/// - The internal representation is opaque and key-type dependent
+///
+/// ## PEM Format
+///
+/// The OpenSSH private key format is not well documented. For more information, see:
+/// - [OpenSSH Private Key Format](https://coolaj86.com/articles/the-openssh-private-key-format/)
+/// - OpenSSH source code
 public struct NIOSSHAgentIdentity: Sendable, Equatable {
     // Store the identity as an array of ByteBuffers
     // While the layout of identities varies by key type,
@@ -44,6 +56,19 @@ public struct NIOSSHAgentIdentity: Sendable, Equatable {
     // be treated opaquely
     var identity: [ByteBuffer]
 
+    /// Create an SSH Agent identity from an OpenSSH PEM-encoded private key.
+    ///
+    /// This initializer parses the OpenSSH private key format and extracts the key material
+    /// needed to add the identity to an SSH Agent.
+    ///
+    /// - Parameter pemRepresentation: The PEM-encoded private key string, including the
+    ///   "-----BEGIN OPENSSH PRIVATE KEY-----" and "-----END OPENSSH PRIVATE KEY-----" markers.
+    ///
+    /// - Returns: A new identity if the PEM data is valid and unencrypted, or `nil` if:
+    ///   - The PEM format is invalid
+    ///   - The key is encrypted (cipher != "none")
+    ///   - The file contains multiple keys
+    ///   - The key data cannot be parsed
     public init?(pemRepresentation: String) {
         let lines = pemRepresentation.split(separator: "\n")
         guard let first = lines.first,
@@ -97,16 +122,22 @@ public struct NIOSSHAgentIdentity: Sendable, Equatable {
         self.identity = idParts
     }
 
-    /// Return the key type as a string
+    /// Returns the key type as a string.
     ///
-    /// The key type name is always the first field in the PEM private key section
+    /// The key type name (e.g., "ssh-ed25519", "ecdsa-sha2-nistp256") is always the first
+    /// field in the PEM private key section.
+    ///
+    /// - Returns: The key type string, or `nil` if the identity is malformed.
     public var keyType: String? {
         identity.first.map { String(buffer: $0) }
     }
 
-    /// Return the comment for the private key
+    /// Returns the comment associated with this private key.
     ///
-    /// The comment field is the last field in the PEM private key section
+    /// The comment field is typically used to identify the key's origin or purpose
+    /// (e.g., "user@hostname"). It is the last field in the PEM private key section.
+    ///
+    /// - Returns: The comment string, or `nil` if the identity is malformed.
     public var comment: String? {
         identity.last.map { String(buffer: $0) }
     }

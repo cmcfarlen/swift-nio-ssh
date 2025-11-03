@@ -14,14 +14,34 @@
 
 import NIOCore
 
-/// The SshAgent protocol uses a length-prefixed framing to encode messages
-/// The format is:
-///    [messageLength:uint32][messageType:byte][messageContent:byte[messageLength-1]]
+/// A codec for framing SSH Agent protocol messages.
 ///
-/// The `SshAgentFrameCoder` only deals with adding the message length to the frames,
-/// the rest of the frame is handled by the protocol message encodings.
+/// The SSH Agent protocol uses length-prefixed framing to encode messages.
+/// Each message is prefixed with a 32-bit unsigned integer (big-endian) indicating
+/// the length of the message that follows.
 ///
+/// ## Message Format
+///
+/// ```
+/// [messageLength:uint32][messageType:byte][messageContent:byte[messageLength-1]]
+/// ```
+///
+/// This codec only handles the length prefix. The message type and content are
+/// handled by ``NIOSSHAgentClientHandler`` and the protocol message encodings.
+///
+/// ## Usage
+///
+/// This type implements both `MessageToByteEncoder` and `ByteToMessageDecoder`,
+/// so it should be used with NIO's `MessageToByteHandler` and `ByteToMessageHandler`:
+///
+/// ```swift
+/// channel.pipeline.addHandlers([
+///     MessageToByteHandler(SshAgentFrameCoder()),
+///     ByteToMessageHandler(SshAgentFrameCoder())
+/// ])
+/// ```
 public struct SshAgentFrameCoder {
+    /// Create a new SSH Agent frame codec.
     public init() {}
 
 }

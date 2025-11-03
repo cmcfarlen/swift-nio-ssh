@@ -14,12 +14,27 @@
 
 import NIOCore
 
-/// A `ChannelDuplexHandler` for converting SSH Agent requests and responses
-/// to `ByteBuffer`.  This handler is stateless.
+/// A `ChannelDuplexHandler` for converting SSH Agent requests and responses to and from `ByteBuffer`.
 ///
-/// This handler doesn't deal with message framing, so this handler
-/// needs support from `SshAgentFrameCoder` and NIO Byte<->Message handlers
-/// to handle that aspect of the protocol.
+/// This handler is stateless and performs the encoding and decoding of SSH Agent protocol messages.
+/// It converts:
+/// - Outbound ``NIOSSHAgentRequest`` values into `ByteBuffer` containing the wire protocol format
+/// - Inbound `ByteBuffer` values (wire protocol) into ``NIOSSHAgentResponse`` values
+///
+/// This handler does not handle message framing. It must be used in conjunction with ``SshAgentFrameCoder``
+/// and NIO's `ByteToMessageHandler` and `MessageToByteHandler` to manage the length-prefixed framing
+/// required by the SSH Agent protocol.
+///
+/// ## Typical Pipeline Setup
+///
+/// ```swift
+/// channel.pipeline.addHandlers([
+///     MessageToByteHandler(SshAgentFrameCoder()),
+///     ByteToMessageHandler(SshAgentFrameCoder()),
+///     NIOSSHAgentClientHandler(),
+///     NIOSSHAgentClientTransactionHandler()
+/// ])
+/// ```
 public final class NIOSSHAgentClientHandler: ChannelDuplexHandler {
     // These ByteBuffers will just be the message type and payload
     // The length is trimmed off/added by framing handlers
