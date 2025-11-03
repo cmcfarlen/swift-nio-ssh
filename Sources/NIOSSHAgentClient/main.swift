@@ -139,7 +139,7 @@ func makeSyncRequest(_ request: NIOSSHAgentRequest) throws -> NIOSSHAgentRespons
     return try future.wait()
 }
 
-func extractIdentities(_ response: NIOSSHAgentResponse) -> [NIOSSHIdentity]? {
+func extractIdentities(_ response: NIOSSHAgentResponse) -> [NIOSSHAgentKeyIdentifier]? {
     switch response.response {
     case .identities(let ids):
         return ids

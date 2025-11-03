@@ -104,7 +104,7 @@ final class SshAgentTests: XCTestCase {
             guard let response else {
                 return
             }
-            switch response {
+            switch response.response {
             case .identities(let ids):
                 XCTAssertEqual(ids.count, 1)
                 XCTAssertEqual(ids[0].key.readableBytes, 9)

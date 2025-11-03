@@ -24,7 +24,7 @@ import Foundation
 /// A private key identity that can be added to an SSH Agent.
 ///
 /// This type represents a private key in the format used by the SSH Agent protocol
-/// for adding identities. It is distinct from ``NIOSSHIdentity``, which represents
+/// for adding identities. It is distinct from ``NIOSSHAgentKeyIdentifier``, which represents
 /// a public key identifier returned by the agent.
 ///
 /// ## Creating Identities
