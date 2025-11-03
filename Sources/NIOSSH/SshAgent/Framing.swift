@@ -45,7 +45,10 @@ extension SshAgentFrameCoder: ByteToMessageDecoder {
         }
         if buffer.readableBytes - 4 >= len {
             buffer.moveReaderIndex(forwardBy: 4)
-            context.fireChannelRead(wrapInboundOut(buffer.readSlice(length: Int(len))!))
+            guard let slice = buffer.readSlice(length: Int(len)) else {
+                throw NIOSSHAgentError.badResponse
+            }
+            context.fireChannelRead(wrapInboundOut(slice))
             return .continue
         }
         return .needMoreData

@@ -154,7 +154,7 @@ extension ByteBuffer {
                 let key = self.readSSHString(),
                 let comment = self.readSSHStringAsString()
             else {
-                return result
+                throw NIOSSHAgentError.partialResponse(expected: Int(nKeys), received: result.count)
             }
             result.append(NIOSSHIdentity(key: key, comment: comment))
         }

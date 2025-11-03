@@ -24,6 +24,7 @@ public struct NIOSSHAgentError: Error {
             case operationInProgress
             case trailingBytes
             case badResponse
+            case partialResponse
         }
         private var base: Base
 
@@ -35,6 +36,7 @@ public struct NIOSSHAgentError: Error {
         public static let operationInProgress: ErrorType = .init(.operationInProgress)
         public static let trailingBytes: ErrorType = .init(.trailingBytes)
         public static let badResponse: ErrorType = .init(.badResponse)
+        public static let partialResponse: ErrorType = .init(.partialResponse)
     }
 
     public var type: ErrorType
@@ -43,15 +45,24 @@ public struct NIOSSHAgentError: Error {
     internal static func agentNotAvailable(reason: String) -> NIOSSHAgentError {
         NIOSSHAgentError(type: .agentNotAvailable, diagnostics: reason)
     }
-    internal static let operationInProgress = NIOSSHAgentError(type: .operationInProgress, diagnostics: nil)
+    internal static let operationInProgress = NIOSSHAgentError(
+        type: .operationInProgress,
+        diagnostics: nil
+    )
     internal static let trailingBytes = NIOSSHAgentError(
         type: .trailingBytes,
         diagnostics: "Unexpected trailing bytes remaining after read"
     )
     internal static let badResponse = NIOSSHAgentError(
         type: .badResponse,
-        diagnostics: "Recieved bad response from agent"
+        diagnostics: "Received bad response from agent"
     )
+    internal static func partialResponse(expected: Int, received: Int) -> NIOSSHAgentError {
+        NIOSSHAgentError(
+            type: .partialResponse,
+            diagnostics: "Expected \(expected) identities but could only parse \(received)"
+        )
+    }
 }
 
 extension NIOSSHAgentError: CustomStringConvertible {
